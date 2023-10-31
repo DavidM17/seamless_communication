@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 import torchaudio
 from helpers import publish
 import logging
@@ -15,33 +17,62 @@ logger = logging.getLogger(__name__)
 resample_rate = 16000
 
 def resample(audio_name):
-    waveform, sample_rate = torchaudio.load(f'/content/seamless_communication/audios/{audio_name}.wav')
+    waveform, sample_rate = torchaudio.load(f'audios/{audio_name}.wav')
     resampler = torchaudio.transforms.Resample(sample_rate, resample_rate, dtype=waveform.dtype)
     resampled_waveform = resampler(waveform)
     torchaudio.save(f'audios/{audio_name}_16.wav', resampled_waveform, resample_rate)
 
-def test(body):
-    publish.add(body)
+def download_file():
+    print('Download from s3')
 
-def use_model(args):
-    device = torch.device("cpu")
-    dtype = torch.float32
-    logger.info(f"Running inference on the CPU in {dtype}.")
+def upload_file():
+    print('Upload to s3')
+
+def evaluate(body):
+    # download_file(body)
+
+    resample(body.audio_name)
+
+    input_path = f'audios/{body.audio_name}_16.wav'
+    output_path=f'output/{body.audio_name}'
+    tgt_lang=body.tgt_lang
+
+    use_model(input_path=input_path, tgt_lang=tgt_lang, output_path=output_path)
+
+    # upload_file(body)
+    # publish.add(body)
+    
+    files = os.listdir("audios")
+    for file in files:
+        # Pending remove from output folder
+        if Path(file).name in [f'{body.audio_name}', f'{body.audio_name}_16']:
+            os.remove(file)
+    
+
+def use_model(input_path, tgt_lang, output_path):
+    if torch.cuda.is_available():
+        device = torch.device("cuda:0")
+        dtype = torch.float16
+        logger.info(f"Running inference on the GPU in {dtype}.")
+    else:
+        device = torch.device("cpu")
+        dtype = torch.float32
+        logger.info(f"Running inference on the CPU in {dtype}.")
 
     translator = Translator('seamlessM4T_medium', 'vocoder_36langs', device, dtype)
     translated_text, wav, sr = translator.predict(
-        args.input_path,
+        input_path,
         'S2ST',
-        args.tgt_lang,
+        tgt_lang,
         src_lang=None,
         ngram_filtering=False,
     )
 
     if wav is not None and sr is not None:
-        logger.info(f"Saving translated audio in {args.tgt_lang}")
+        logger.info(f"Saving translated audio in {tgt_lang}")
         torchaudio.save(
-            args.output_path,
+            output_path,
             wav[0].to(torch.float32).cpu(),
             sample_rate=sr,
         )
-    logger.info(f"Translated text in {args.tgt_lang}: {translated_text}")
+    logger.info(f"Translated text in {tgt_lang}: {translated_text}")
