@@ -15,12 +15,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 resample_rate = 16000
+absolute_path = os.path.dirname(__file__)
 
 def resample(audio_name):
-    waveform, sample_rate = torchaudio.load(f'audios/{audio_name}.wav')
+    waveform, sample_rate = torchaudio.load(os.path.join(absolute_path, f'../audios/{audio_name}.wav'))
     resampler = torchaudio.transforms.Resample(sample_rate, resample_rate, dtype=waveform.dtype)
     resampled_waveform = resampler(waveform)
-    torchaudio.save(f'audios/{audio_name}_16.wav', resampled_waveform, resample_rate)
+    torchaudio.save(os.path.join(absolute_path, f'../audios/{audio_name}_16.wav'), resampled_waveform, resample_rate)
 
 def download_file():
     print('Download from s3')
@@ -31,22 +32,23 @@ def upload_file():
 def evaluate(body):
     # download_file(body)
 
-    resample(body.audio_name)
+    resample(body['audio_name'])
+    audio_name = body['audio_name']
 
-    input_path = f'audios/{body.audio_name}_16.wav'
-    output_path=f'output/{body.audio_name}'
-    tgt_lang=body.tgt_lang
+    input_path = os.path.join(absolute_path, f'../audios/{audio_name}_16.wav')
+    output_path = os.path.join(absolute_path, f'../output/{audio_name}.wav')
+    tgt_lang = body['tgt_lang']
 
     use_model(input_path=input_path, tgt_lang=tgt_lang, output_path=output_path)
 
     # upload_file(body)
     # publish.add(body)
     
-    files = os.listdir("audios")
+    files = os.listdir(os.path.join(absolute_path, '../audios'))
     for file in files:
         # Pending remove from output folder
-        if Path(file).name in [f'{body.audio_name}', f'{body.audio_name}_16']:
-            os.remove(file)
+        if Path(file).name in [f'{audio_name}.wav', f'{audio_name}_16.wav']:
+            os.remove(os.path.join(absolute_path, f'../audios/{file}'))
     
 
 def use_model(input_path, tgt_lang, output_path):
