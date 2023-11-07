@@ -5,7 +5,17 @@ from helpers import publish
 import logging
 import torch
 import torchaudio
-from seamless_communication.models.inference import Translator
+from src.seamless_communication.models.inference import Translator
+import boto3
+import json
+from dotenv import load_dotenv
+
+load_dotenv()
+
+AWS_ACCESS_KEY = os.getenv('AWS_ACCESS_KEY')
+AWS_SECRECT_ACCESS_KEY = os.getenv('AWS_SECRECT_ACCESS_KEY')
+REGION_NAME = os.getenv('REGION_NAME')
+ENDPOINT_URL = os.getenv('ENDPOINT_URL')
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,21 +27,29 @@ logger = logging.getLogger(__name__)
 resample_rate = 16000
 absolute_path = os.path.dirname(__file__)
 
+s3 = boto3.client("s3", aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRECT_ACCESS_KEY, region_name=REGION_NAME,endpoint_url=ENDPOINT_URL)
+
 def resample(audio_name):
     waveform, sample_rate = torchaudio.load(os.path.join(absolute_path, f'../audios/{audio_name}.wav'))
     resampler = torchaudio.transforms.Resample(sample_rate, resample_rate, dtype=waveform.dtype)
     resampled_waveform = resampler(waveform)
     torchaudio.save(os.path.join(absolute_path, f'../audios/{audio_name}_16.wav'), resampled_waveform, resample_rate)
 
-def download_file():
-    print('Download from s3')
+def download_file(body):
+    data = json.loads(body.decode("utf-8").replace("'",'"'))
+    key = data['file']['key']
+    
+    s3.download_file(
+        Filename=os.path.join(absolute_path, f'../audios/{key}'), 
+        Bucket="assets-uploaded-ml", 
+        Key=key
+    )
 
 def upload_file():
     print('Upload to s3')
 
 def evaluate(body):
-    # download_file(body)
-
+    download_file(body)
     resample(body['audio_name'])
     audio_name = body['audio_name']
 

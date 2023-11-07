@@ -2,7 +2,12 @@ import pika
 from helpers import transform
 
 def listen():
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+    # credentials = pika.PlainCredentials('rabbitmq', 'rabbitmq')
+    connection = pika.BlockingConnection(pika.ConnectionParameters(
+        host='localhost', 
+        port=5672,
+        #credentials=credentials
+    ))
     channel = connection.channel()
 
     channel.queue_declare(queue='audio_uploaded')
@@ -13,7 +18,6 @@ def listen():
     channel.start_consuming()
 
 def callback(ch, method, properties, body):
-    print(f" [x] Received {body}")
     transform.evaluate(body)
     
 try:
