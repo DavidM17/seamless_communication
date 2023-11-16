@@ -1,16 +1,16 @@
 import os
-from pathlib import Path
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '/app/src'))
+
 import torchaudio
 from helpers import publish
 import logging
 import torch
-import torchaudio
-from src.seamless_communication.models.inference import Translator
 import boto3
 import json
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 
-load_dotenv()
+#load_dotenv()
 
 AWS_ACCESS_KEY = os.getenv('AWS_ACCESS_KEY')
 AWS_SECRECT_ACCESS_KEY = os.getenv('AWS_SECRECT_ACCESS_KEY')
@@ -30,46 +30,62 @@ absolute_path = os.path.dirname(__file__)
 s3 = boto3.client("s3", aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRECT_ACCESS_KEY, region_name=REGION_NAME,endpoint_url=ENDPOINT_URL)
 
 def resample(audio_name):
-    waveform, sample_rate = torchaudio.load(os.path.join(absolute_path, f'../audios/{audio_name}.wav'))
+    logger.info(f"Start resample of file: {audio_name}")
+    
+    waveform, sample_rate = torchaudio.load(os.path.join(absolute_path, f'../audios/{audio_name}'))
     resampler = torchaudio.transforms.Resample(sample_rate, resample_rate, dtype=waveform.dtype)
     resampled_waveform = resampler(waveform)
-    torchaudio.save(os.path.join(absolute_path, f'../audios/{audio_name}_16.wav'), resampled_waveform, resample_rate)
+    
+    return resampled_waveform
 
 def download_file(body):
     data = json.loads(body.decode("utf-8").replace("'",'"'))
     key = data['file']['key']
+
+    logger.info(f'Start download of file with key: {key}')
     
     s3.download_file(
         Filename=os.path.join(absolute_path, f'../audios/{key}'), 
         Bucket="assets-uploaded-ml", 
         Key=key
     )
+    
+    logger.info(f"Downloaded file with key: {key}")
 
-def upload_file():
-    print('Upload to s3')
+def upload_file(file_name, key):
+    s3.upload_file(file_name, 'assets-converted-ml', key)
+    logger.info(f"File converted uploaded with key: {key}")
 
 def evaluate(body):
+    data = json.loads(body.decode("utf-8").replace("'",'"'))
+    audio_name = data['file']['key']
+
     download_file(body)
-    resample(body['audio_name'])
-    audio_name = body['audio_name']
-
-    input_path = os.path.join(absolute_path, f'../audios/{audio_name}_16.wav')
-    output_path = os.path.join(absolute_path, f'../output/{audio_name}.wav')
-    tgt_lang = body['tgt_lang']
-
-    use_model(input_path=input_path, tgt_lang=tgt_lang, output_path=output_path)
-
-    # upload_file(body)
-    # publish.add(body)
+    wave = resample(audio_name)
     
-    files = os.listdir(os.path.join(absolute_path, '../audios'))
-    for file in files:
-        # Pending remove from output folder
-        if Path(file).name in [f'{audio_name}.wav', f'{audio_name}_16.wav']:
-            os.remove(os.path.join(absolute_path, f'../audios/{file}'))
+    output_path = os.path.join(absolute_path, f'../output/{audio_name}')
+    tgt_lang = data['file']['tgt_lang']
+
+    use_model(wave=wave, tgt_lang=tgt_lang, output_path=output_path)
+
+    upload_file(output_path, audio_name)
+    
+    event = {
+        'success': True,
+        'key': audio_name,
+        'tgt_lang': tgt_lang
+    }
+    
+    publish.add(event)
+    
+    # files = os.listdir(os.path.join(absolute_path, '../audios'))
+    # for file in files:
+    #     # Pending remove from output folder
+    #     if Path(file).name in [f'{audio_name}.wav', f'{audio_name}_16.wav']:
+    #         os.remove(os.path.join(absolute_path, f'../audios/{file}'))
     
 
-def use_model(input_path, tgt_lang, output_path):
+def use_model(wave, tgt_lang, output_path):
     if torch.cuda.is_available():
         device = torch.device("cuda:0")
         dtype = torch.float16
@@ -79,20 +95,24 @@ def use_model(input_path, tgt_lang, output_path):
         dtype = torch.float32
         logger.info(f"Running inference on the CPU in {dtype}.")
 
-    translator = Translator('seamlessM4T_medium', 'vocoder_36langs', device, dtype)
-    translated_text, wav, sr = translator.predict(
-        input_path,
-        'S2ST',
-        tgt_lang,
-        src_lang=None,
-        ngram_filtering=False,
-    )
+    s2st_model = torch.jit.load("unity_on_device.ptl")
+    with torch.no_grad():
+        translated_text, units, wav = s2st_model(wave, tgt_lang=tgt_lang)
+    # translator = Translator('seamlessM4T_medium', 'vocoder_36langs', device, dtype)
+    # translated_text, wav, sr = translator.predict(
+    #     input_path,
+    #     'S2ST',
+    #     tgt_lang,
+    #     src_lang=None,
+    #     ngram_filtering=False,
+    # )
 
-    if wav is not None and sr is not None:
+        # if wav is not None and sr is not None:
         logger.info(f"Saving translated audio in {tgt_lang}")
+        
         torchaudio.save(
             output_path,
-            wav[0].to(torch.float32).cpu(),
-            sample_rate=sr,
+            wav.unsqueeze(0),
+            sample_rate=16000,
         )
-    logger.info(f"Translated text in {tgt_lang}: {translated_text}")
+        logger.info(f"Translated text in {tgt_lang}: {translated_text}")

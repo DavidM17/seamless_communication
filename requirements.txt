@@ -1,9 +1,6 @@
-pre-commit
-datasets
 torchaudio
 soundfile
-librosa
-fairseq2==0.1.*
-pika
-numpy
 boto3
+librosa
+numpy
+pika

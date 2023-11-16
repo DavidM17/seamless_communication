@@ -4,7 +4,7 @@ from helpers import transform
 def listen():
     # credentials = pika.PlainCredentials('rabbitmq', 'rabbitmq')
     connection = pika.BlockingConnection(pika.ConnectionParameters(
-        host='localhost', 
+        host='host.docker.internal', 
         port=5672,
         #credentials=credentials
     ))
@@ -18,9 +18,12 @@ def listen():
     channel.start_consuming()
 
 def callback(ch, method, properties, body):
-    transform.evaluate(body)
+    try:
+        transform.evaluate(body)
+    except Exception as e:
+        print(f'Conversion error: {e}')
     
 try:
     listen()
-except:
-    print("Failed to connect to RabbitMQ service")
+except Exception as e:
+    print(f'Failed to connect to RabbitMQ service: {e}')

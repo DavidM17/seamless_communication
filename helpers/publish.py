@@ -1,17 +1,18 @@
 import pika
 import json
 
-def add(cmd):
+def add(body):
     try:
-        connection = pika.BlockingConnection(pika.ConnectionParameters(host="localhost"))
+        connection = pika.BlockingConnection(pika.ConnectionParameters(
+        host='host.docker.internal', 
+        port=5672,
+        #credentials=credentials
+    ))
     except pika.exceptions.AMQPConnectionError as exc:
         print("Failed to connect to RabbitMQ service. Message wont be sent.")
         return
-    
-    cmd_obj = json.loads(cmd.decode("utf-8").replace("'",'"'))
-    cmd_obj['Date']  = '383994'
 
-    cmd = json.dumps(cmd_obj).encode('utf-8')
+    cmd = json.dumps(body).encode('utf-8')
 
     channel = connection.channel()
     channel.queue_declare(queue='model_result')

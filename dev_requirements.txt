@@ -1,9 +1,0 @@
-pytest
-black
-flake8
-isort
-pika
-numpy
-torchaudio
-boto3
-python-dotenv
